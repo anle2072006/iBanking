@@ -1,0 +1,29 @@
+stateDiagram-v2
+    [*] --> PENDING : create transaction<br/>(check fee exists & not paid)
+
+    PENDING --> OTP_SENT : balance sufficient<br/>OTP generated & sent via email
+    PENDING --> FAILED : insufficient balance<br/>OR fee already paid<br/>(HTTP 409 Conflict)
+    PENDING --> CANCELLED : user cancels<br/>before OTP is sent
+
+    OTP_SENT --> SUCCESS : correct OTP verified<br/>within 5 minutes
+    OTP_SENT --> FAILED : wrong OTP<br/>(max attempts exceeded)
+    OTP_SENT --> EXPIRED : OTP not verified<br/>within 5 minutes<br/>(HTTP 410 Gone)
+
+    SUCCESS --> [*] : balance deducted<br/>fee status updated<br/>confirmation email sent
+    FAILED --> [*]
+    EXPIRED --> [*]
+    CANCELLED --> [*]
+
+    note right of SUCCESS
+        Final state - triggers:
+        - User Service: deduct balance
+        - Fee Service: update paid_amount/status
+        - RabbitMQ: publish confirmation email event
+    end note
+
+    note right of PENDING
+        This is the "reservation" state
+        used to lock TuitionFee.status = pending
+        preventing a second concurrent payer
+        (Scenario B in Transaction/Concurrency)
+    end note

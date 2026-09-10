@@ -1,0 +1,30 @@
+flowchart LR
+    NguoiDung(["👤 Người dùng<br/>(Người nộp tiền / Chủ tài khoản)"])
+    HeThongEmail(["📧 Email System<br/>(External)"])
+
+    subgraph HeThong["Hệ thống Đóng Học Phí iBanking"]
+        UC1(("Đăng nhập"))
+        UC2(("Xem thông tin<br/>tài khoản"))
+        UC3(("Tra cứu học phí<br/>theo MSSV"))
+        UC4(("Khởi tạo giao dịch<br/>thanh toán học phí"))
+        UC5(("Kiểm tra<br/>số dư khả dụng"))
+        UC6(("Xác thực<br/>giao dịch bằng OTP"))
+        UC7(("Xem lịch sử<br/>giao dịch"))
+        UC8(("Nhận email<br/>xác nhận"))
+    end
+
+    NguoiDung --> UC1
+    NguoiDung --> UC2
+    NguoiDung --> UC3
+    NguoiDung --> UC4
+    NguoiDung --> UC6
+    NguoiDung --> UC7
+
+    UC4 -. include .-> UC3
+    UC4 -. include .-> UC5
+    UC4 -. include .-> UC6
+    UC6 -. trigger sau khi thành công .-> UC8
+    UC8 --> HeThongEmail
+
+    style NguoiDung fill:#e8f4fd,stroke:#2563eb,stroke-width:2px
+    style HeThongEmail fill:#fef3c7,stroke:#d97706,stroke-width:2px

@@ -1,0 +1,32 @@
+sequenceDiagram
+    participant C1 as Client (Tab 1 - pay 80k)
+    participant C2 as Client (Tab 2 - pay 90k)
+    participant PS as Payment Service
+    participant US as User Service
+    participant DB as User DB (balance = 100k)
+
+    par Request 1 arrives first
+        C1->>PS: POST /transactions (amount=80000)
+        PS->>US: reserve & deduct balance (userId, 80000)
+        US->>DB: BEGIN TRANSACTION
+        US->>DB: SELECT balance FROM users WHERE id=? FOR UPDATE
+        Note over DB: Row is now LOCKED.<br/>Request 2 must wait here.
+        DB-->>US: balance = 100000
+        US->>US: check 100000 >= 80000 → OK
+        US->>DB: UPDATE balance = 100000 - 80000 = 20000
+        US->>DB: COMMIT
+        Note over DB: Lock released.
+        US-->>PS: 200 OK (new balance = 20000)
+        PS-->>C1: 201 Created - transaction success
+    and Request 2 arrives almost same time
+        C2->>PS: POST /transactions (amount=90000)
+        PS->>US: reserve & deduct balance (userId, 90000)
+        US->>DB: SELECT balance FROM users WHERE id=? FOR UPDATE
+        Note over US,DB: BLOCKED - waiting for<br/>Request 1's lock to release
+        DB-->>US: balance = 20000 (after Request 1 committed)
+        US->>US: check 20000 >= 90000 → FAIL
+        US-->>PS: 409 Conflict - insufficient balance
+        PS-->>C2: 409 Conflict - "Số dư không đủ"
+    end
+
+    Note over C1,DB: Result: only Request 1 succeeds.<br/>Final balance = 20000 (correct, never negative)

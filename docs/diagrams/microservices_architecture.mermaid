@@ -1,0 +1,48 @@
+flowchart TB
+    subgraph Client["Client"]
+        FE["Web Frontend"]
+    end
+
+    GW["API Gateway"]
+
+    subgraph Services["Microservices"]
+        US["User Service<br/>(đăng nhập, số dư)"]
+        FS["Fee Service<br/>(học phí, khóa/trạng thái)"]
+        PS["Payment Service<br/>(điều phối giao dịch - Saga orchestrator)"]
+        OS["OTP Service<br/>(sinh/xác thực OTP)"]
+    end
+
+    subgraph DataStores["Data Stores riêng theo từng service"]
+        UDB[("User DB")]
+        FDB[("Fee DB")]
+        PDB[("Transaction DB")]
+        ODB[("OTP DB")]
+    end
+
+    MQ{{"RabbitMQ<br/>(Message Broker)"}}
+    Email[/"Email Server<br/>(External)"/]
+
+    FE -->|"HTTPS REST"| GW
+    GW -->|"REST"| US
+    GW -->|"REST"| FS
+    GW -->|"REST"| PS
+
+    PS -->|"REST đồng bộ:<br/>kiểm tra & trừ số dư"| US
+    PS -->|"REST đồng bộ:<br/>khóa & cập nhật trạng thái học phí<br/>(SELECT FOR UPDATE)"| FS
+    PS -->|"REST: yêu cầu tạo OTP"| OS
+    OS -->|"publish - bất đồng bộ"| MQ
+    MQ -->|"consume - gửi email OTP"| Email
+    FE -->|"REST: nhập mã OTP"| GW
+    GW -->|"REST: xác thực OTP"| OS
+
+    PS -->|"publish sự kiện giao dịch<br/>thành công - bất đồng bộ"| MQ
+    MQ -->|"consume - gửi email xác nhận"| Email
+
+    US --> UDB
+    FS --> FDB
+    PS --> PDB
+    OS --> ODB
+
+    style MQ fill:#fef3c7,stroke:#d97706,stroke-width:2px
+    style Email fill:#e8f4fd,stroke:#2563eb,stroke-width:2px
+    style PS fill:#dcfce7,stroke:#16a34a,stroke-width:2px

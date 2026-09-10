@@ -1,0 +1,35 @@
+sequenceDiagram
+    participant A as User A (pays 5M)
+    participant B as User B (pays 5M)
+    participant PS as Payment Service
+    participant FS as Fee Service
+    participant US as User Service
+    participant MQ as RabbitMQ
+
+    par User A's transaction arrives first
+        A->>PS: POST /transactions (mssv=X, amount=5000000)
+        PS->>FS: reserve fee (mssv=X)
+        FS->>FS: SELECT * FROM tuition_fees WHERE mssv=X FOR UPDATE
+        Note over FS: Row LOCKED.<br/>User B's request must wait here.
+        FS->>FS: check status = "chua_thanh_toan" → OK
+        FS->>FS: UPDATE status = "dang_xu_ly" (reserved)
+        FS-->>PS: 200 OK - fee reserved
+        PS->>US: deduct balance (userA, 5000000)
+        US-->>PS: 200 OK - balance deducted
+        PS->>FS: confirm payment (mssv=X)
+        FS->>FS: UPDATE status = "da_thanh_toan", paid_amount += 5000000
+        FS-->>PS: 200 OK
+        PS->>MQ: publish "payment.success" event
+        PS-->>A: 201 Created - transaction success
+    and User B's transaction arrives almost same time
+        B->>PS: POST /transactions (mssv=X, amount=5000000)
+        PS->>FS: reserve fee (mssv=X)
+        FS->>FS: SELECT * FROM tuition_fees WHERE mssv=X FOR UPDATE
+        Note over FS: BLOCKED - waiting for<br/>User A's lock to release
+        FS->>FS: check status → now "da_thanh_toan" (after A committed)
+        FS-->>PS: 409 Conflict - fee already paid
+        PS-->>B: 409 Conflict - "Học phí đã được thanh toán"
+        Note over B: User B is NOT charged.<br/>No compensating transaction needed<br/>because rejection happened BEFORE deducting balance.
+    end
+
+    Note over A,MQ: If deducting User A's balance had FAILED instead,<br/>Payment Service would call FS to UNDO the reservation<br/>(compensating transaction) so User B could retry.

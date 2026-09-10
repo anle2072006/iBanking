@@ -1,0 +1,44 @@
+erDiagram
+    USER {
+        int user_id PK
+        string username UK
+        string password_hash
+        string ho_ten
+        string so_dien_thoai
+        string email
+        decimal balance
+        int version "dùng cho optimistic locking"
+    }
+
+    TUITION_FEE {
+        int fee_id PK
+        string mssv UK
+        string ho_ten_sv
+        decimal required_amount "số tiền cần đóng"
+        decimal paid_amount "số tiền đã đóng - cho phép đóng một phần"
+        string status "chua_thanh_toan / dang_xu_ly / da_thanh_toan"
+        int version "dùng cho optimistic locking"
+    }
+
+    TRANSACTION {
+        int transaction_id PK
+        int payer_user_id FK "tham chiếu USER - người nộp tiền"
+        string mssv_receiver FK "tham chiếu TUITION_FEE - MSSV thụ hưởng"
+        decimal amount
+        string status "pending / otp_sent / success / failed / expired"
+        datetime created_at
+        datetime completed_at
+    }
+
+    OTP {
+        int otp_id PK
+        int transaction_id FK "1-1 với TRANSACTION"
+        string otp_code
+        datetime expired_at "created_at + 5 phút"
+        boolean is_used
+        int attempt_count
+    }
+
+    USER ||--o{ TRANSACTION : "thực hiện (là người nộp)"
+    TUITION_FEE ||--o{ TRANSACTION : "được thanh toán bởi (có thể nhiều giao dịch một phần)"
+    TRANSACTION ||--|| OTP : "được xác thực bằng"
