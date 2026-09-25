@@ -1,12 +1,33 @@
 version: "3.8"
 
 services:
-  mongo:
+  mongo-user:
     image: mongo:7
     ports:
-      - "27017:27017"
+      - "27018:27017"
     volumes:
-      - mongo-data:/data/db
+      - mongo-user-data:/data/db
+
+  mongo-fee:
+    image: mongo:7
+    ports:
+      - "27019:27017"
+    volumes:
+      - mongo-fee-data:/data/db
+
+  mongo-payment:
+    image: mongo:7
+    ports:
+      - "27020:27017"
+    volumes:
+      - mongo-payment-data:/data/db
+
+  mongo-otp:
+    image: mongo:7
+    ports:
+      - "27021:27017"
+    volumes:
+      - mongo-otp-data:/data/db
 
   rabbitmq:
     image: rabbitmq:3-management-alpine
@@ -20,7 +41,7 @@ services:
       - "3001:3001"
     env_file: ./user-service/.env
     depends_on:
-      - mongo
+      - mongo-user
 
   fee-service:
     build: ./fee-service
@@ -28,7 +49,7 @@ services:
       - "3002:3002"
     env_file: ./fee-service/.env
     depends_on:
-      - mongo
+      - mongo-fee
 
   payment-service:
     build: ./payment-service
@@ -36,7 +57,7 @@ services:
       - "3003:3003"
     env_file: ./payment-service/.env
     depends_on:
-      - mongo
+      - mongo-payment
       - user-service
       - fee-service
       - otp-service
@@ -47,7 +68,7 @@ services:
       - "3004:3004"
     env_file: ./otp-service/.env
     depends_on:
-      - mongo
+      - mongo-otp
       - rabbitmq
 
   api-gateway:
@@ -68,4 +89,7 @@ services:
       - api-gateway
 
 volumes:
-  mongo-data:
+  mongo-user-data:
+  mongo-fee-data:
+  mongo-payment-data:
+  mongo-otp-data:

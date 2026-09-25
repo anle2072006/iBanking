@@ -1,7 +1,7 @@
 const jwt = require("jsonwebtoken");
 
 // Danh sách route công khai, không cần token
-const PUBLIC_PATHS = ["/auth/login"];
+const PUBLIC_PATHS = ["/api/auth/login"];
 
 module.exports = (req, res, next) => {
   if (PUBLIC_PATHS.some((p) => req.path.startsWith(p))) return next();

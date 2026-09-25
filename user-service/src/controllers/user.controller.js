@@ -19,7 +19,6 @@ exports.getProfile = async (req, res, next) => {
   }
 };
 
-// Endpoint nội bộ, chỉ Payment Service gọi qua REST đồng bộ
 exports.deductBalance = async (req, res, next) => {
   try {
     const { amount } = req.body;

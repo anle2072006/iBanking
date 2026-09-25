@@ -1,4 +1,3 @@
-// Chạy: node seed.js (sau khi user-service đang chạy và kết nối MongoDB)
 require("dotenv").config();
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
