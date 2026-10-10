@@ -27,16 +27,27 @@ export default function OtpVerify() {
   const ss = String(secondsLeft % 60).padStart(2, "0");
 
   const handleVerify = async () => {
+    if (otp.length !== 6) {
+      setError("Vui lòng nhập đủ 6 chữ số");
+      return;
+    }
     setError("");
     setLoading(true);
     try {
       await verifyOtp(transactionId, otp);
       navigate("/result", { state: { success: true } });
     } catch (err) {
-      setError(err.response?.data?.message || "Xác thực OTP thất bại");
-      if (err.response?.status === 410 || err.response?.status === 409) {
-        navigate("/result", { state: { success: false, message: err.response?.data?.message } });
+      const code = err.response?.status;
+      const message = err.response?.data?.message || "Xác thực OTP thất bại";
+      // 410: hết hạn, 409: giao dịch không còn chờ OTP, 429: hết lượt thử
+      // -> giao dịch đã kết thúc, chuyển sang trang kết quả
+      if (code === 410 || code === 409 || code === 429) {
+        navigate("/result", { state: { success: false, message } });
+        return;
       }
+      // 400 (sai mã): ở lại trang để nhập lại
+      setError(message);
+      setOtp("");
     } finally {
       setLoading(false);
     }
@@ -54,8 +65,11 @@ export default function OtpVerify() {
 
       <input
         value={otp}
-        onChange={(e) => setOtp(e.target.value)}
+        onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+        onKeyDown={(e) => e.key === "Enter" && !loading && secondsLeft > 0 && handleVerify()}
         maxLength={6}
+        inputMode="numeric"
+        autoFocus
         placeholder="Nhập mã 6 số"
         className="mb-3 w-full rounded-md border border-gray-200 px-3 py-2 text-center text-lg tracking-widest focus:border-red-800 focus:outline-none"
       />

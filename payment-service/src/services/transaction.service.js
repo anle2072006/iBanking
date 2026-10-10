@@ -4,16 +4,16 @@ const userClient = require("../clients/userService.client");
 const otpClient = require("../clients/otpService.client");
 const AppError = require("../utils/AppError");
 
-/**
- * Khởi tạo giao dịch - đúng thứ tự đã vẽ trong sequence diagram Tình huống B:
- *   1. Khóa (reserve) khoản học phí TRƯỚC
- *   2. Trừ tiền SAU
- *   3. Nếu bước 2 thất bại -> nhả lại khóa (compensating transaction)
- * Thứ tự này đảm bảo: nếu học phí đã có người khác giữ chỗ, hệ thống
- * từ chối ngay ở bước 1, không bao giờ đụng đến tiền của người dùng.
- */
+const OTP_WINDOW_MS = 5 * 60 * 1000 + 10 * 1000; // 5 phút OTP + 10s du di
+const PENDING_STUCK_MS = 2 * 60 * 1000;
+
+// Compensating transaction: hoàn tiền + nhả khóa học phí
+const compensate = async (tx) => {
+  await userClient.refundBalance(tx.payerId, tx.amount);
+  await feeClient.release(tx.mssv);
+};
+
 exports.initiate = async ({ payerId, mssv, amount, payerEmail }) => {
-  // Bước 1: kiểm tra thông tin học phí + số tiền hợp lệ
   const fee = await feeClient.lookup(mssv);
   if (fee.status === "da_thanh_toan") {
     throw new AppError(409, "Học phí này đã được thanh toán");
@@ -23,7 +23,7 @@ exports.initiate = async ({ payerId, mssv, amount, payerEmail }) => {
     throw new AppError(400, `Số tiền vượt quá số học phí còn thiếu (${remaining})`);
   }
 
-  // Bước 2: giữ chỗ khoản học phí (atomic ở Fee Service)
+  // 1. Giữ chỗ học phí (atomic) - chặn tình huống B
   const reserveResult = await feeClient.reserve(mssv);
   if (!reserveResult.success) {
     throw new AppError(
@@ -32,10 +32,9 @@ exports.initiate = async ({ payerId, mssv, amount, payerEmail }) => {
     );
   }
 
-  // Bước 3: trừ tiền người nộp (atomic ở User Service)
+  // 2. Trừ tiền (atomic) - chặn tình huống A
   const deductResult = await userClient.deductBalance(payerId, amount);
   if (!deductResult.success) {
-    // Compensating transaction: nhả lại khóa vì chưa trừ được tiền
     await feeClient.release(mssv);
     throw new AppError(
       deductResult.statusCode === 409 ? 402 : 500,
@@ -43,27 +42,30 @@ exports.initiate = async ({ payerId, mssv, amount, payerEmail }) => {
     );
   }
 
-  // Bước 4: tạo bản ghi giao dịch, trạng thái "pending"
+  // 3. Ghi giao dịch
   const transaction = await transactionRepository.create({
     payerId,
     mssv,
     amount,
+    payerEmail,
     status: "pending",
   });
 
-  // Bước 5: yêu cầu OTP Service sinh mã & gửi email - GỌI BẤT ĐỒNG BỘ
-  // (OTP Service tự publish message lên RabbitMQ, Payment Service không chờ)
-  await otpClient.requestOtp(transaction._id.toString(), payerEmail);
-  await transactionRepository.updateStatus(transaction._id, "otp_sent");
+  // 4. Gọi OTP Service; lỗi thì hoàn tác toàn bộ
+  try {
+    await otpClient.requestOtp(transaction._id.toString(), payerEmail);
+  } catch (err) {
+    const claimed = await transactionRepository.transition(
+      transaction._id, "pending", "failed"
+    );
+    if (claimed) await compensate(claimed);
+    throw new AppError(502, "Không gửi được OTP, giao dịch đã được hoàn tác");
+  }
 
+  await transactionRepository.transition(transaction._id, "pending", "otp_sent");
   return { transactionId: transaction._id, status: "otp_sent" };
 };
 
-/**
- * Xác thực OTP - bước cuối cùng hoàn tất giao dịch.
- * Nếu OTP hết hạn/sai -> coi giao dịch thất bại, phải compensate
- * (hoàn tiền + nhả khóa học phí) vì tiền đã bị trừ ở bước initiate.
- */
 exports.verifyOtp = async (transactionId, otpCode) => {
   const transaction = await transactionRepository.findById(transactionId);
   if (!transaction) throw new AppError(404, "Không tìm thấy giao dịch");
@@ -74,23 +76,71 @@ exports.verifyOtp = async (transactionId, otpCode) => {
   const otpResult = await otpClient.verifyOtp(transactionId, otpCode);
 
   if (!otpResult.success) {
-    const failStatus = otpResult.statusCode === 410 ? "expired" : "failed";
-    await transactionRepository.updateStatus(transaction._id, failStatus);
-
-    // Compensating transaction: hoàn tiền + nhả khóa học phí
-    await userClient.refundBalance(transaction.payerId, transaction.amount);
-    await feeClient.release(transaction.mssv);
-
+    // 410 = OTP hết hạn, 429 = hết lượt thử -> giao dịch chết, hoàn tiền
+    if (otpResult.statusCode === 410 || otpResult.statusCode === 429) {
+      const newStatus = otpResult.statusCode === 410 ? "expired" : "failed";
+      const claimed = await transactionRepository.transition(
+        transaction._id, "otp_sent", newStatus
+      );
+      if (claimed) await compensate(claimed);
+    }
+    // 400 (sai mã) -> KHÔNG hoàn tiền, cho người dùng nhập lại
     throw new AppError(otpResult.statusCode || 400, otpResult.message);
   }
 
-  // OTP đúng -> xác nhận thanh toán ở Fee Service, hoàn tất giao dịch
-  await feeClient.confirmPayment(transaction.mssv, transaction.amount);
-  const updated = await transactionRepository.updateStatus(transaction._id, "success", {
+  // OTP đúng -> gạch nợ học phí
+  try {
+    await feeClient.confirmPayment(transaction.mssv, transaction.amount);
+  } catch (err) {
+    const claimed = await transactionRepository.transition(
+      transaction._id, "otp_sent", "failed"
+    );
+    if (claimed) await compensate(claimed);
+    throw new AppError(500, "Không thể xác nhận học phí, giao dịch đã được hoàn tác");
+  }
+
+  const done = await transactionRepository.transition(transaction._id, "otp_sent", "success", {
     completedAt: new Date(),
   });
 
-  return updated;
+  // Gửi email xác nhận (bất đồng bộ). Lỗi gửi mail KHÔNG làm hỏng giao dịch đã thành công.
+  if (done) {
+    otpClient
+      .sendConfirmation({
+        transactionId: done._id.toString(),
+        email: done.payerEmail,
+        mssv: done.mssv,
+        amount: done.amount,
+      })
+      .catch((err) => console.error("[Payment Service] Gửi email xác nhận lỗi:", err.message));
+  }
+
+  return done;
 };
 
 exports.getHistory = async (payerId) => transactionRepository.findHistoryByUser(payerId);
+
+/**
+ * Chạy định kỳ: dọn giao dịch bị bỏ dở.
+ *  - otp_sent quá 5 phút -> expired + hoàn tiền + nhả học phí
+ *  - pending quá 2 phút  -> failed  + hoàn tiền + nhả học phí (service sập giữa chừng)
+ */
+exports.expireStale = async () => {
+  const jobs = [
+    ["otp_sent", OTP_WINDOW_MS, "expired"],
+    ["pending", PENDING_STUCK_MS, "failed"],
+  ];
+  for (const [from, ageMs, to] of jobs) {
+    const stale = await transactionRepository.findStale(from, ageMs);
+    for (const tx of stale) {
+      const claimed = await transactionRepository.transition(tx._id, from, to);
+      if (!claimed) continue; // request khác đã xử lý rồi
+      try {
+        await compensate(claimed);
+        console.log(`[Payment Service] Đã ${to} và hoàn tiền giao dịch ${tx._id}`);
+      } catch (err) {
+        console.error(`[Payment Service] Hoàn tiền lỗi giao dịch ${tx._id}:`, err.message);
+      }
+    }
+  }
+};

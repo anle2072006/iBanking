@@ -19,3 +19,12 @@ exports.publishSendOtpEmail = async ({ email, otpCode, transactionId }) => {
     { persistent: true }
   );
 };
+
+exports.publishConfirmationEmail = async ({ email, transactionId, mssv, amount }) => {
+  const ch = await getChannel();
+  ch.sendToQueue(
+    "email.send_confirmation",
+    Buffer.from(JSON.stringify({ email, transactionId, mssv, amount })),
+    { persistent: true }
+  );
+};

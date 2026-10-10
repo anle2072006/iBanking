@@ -5,4 +5,5 @@ const controller = require("../controllers/otp.controller");
 router.post("/otp/generate", controller.generate);
 router.post("/otp/verify", controller.verify);
 
+router.post("/otp/confirmation", controller.confirmation);
 module.exports = router;

@@ -25,3 +25,14 @@ exports.verifyOtp = async (transactionId, otpCode) => {
     };
   }
 };
+
+exports.sendConfirmation = async ({ transactionId, email, mssv, amount }) => {
+  const { data } = await axios.post(`${BASE_URL}/api/otp/confirmation`, {
+    transactionId,
+    email,
+    mssv,
+    amount,
+  });
+  return data;
+};
+  
