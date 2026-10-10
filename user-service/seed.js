@@ -15,7 +15,8 @@ async function seed() {
       passwordHash,
       hoTen: "Nguyễn Văn A",
       soDienThoai: "0901234567",
-      email: "nguyenvana@example.com",
+      email: "anle31903@gmail.com",
+      mssv: "52100013",
       balance: 5000000,
     },
     {
@@ -23,7 +24,8 @@ async function seed() {
       passwordHash,
       hoTen: "Trần Thị B",
       soDienThoai: "0907654321",
-      email: "tranthib@example.com",
+      email: "anle31903@gmail.com",
+      mssv: "52100027",
       balance: 8000000,
     },
   ]);

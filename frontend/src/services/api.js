@@ -26,6 +26,6 @@ export const verifyOtp = (transactionId, otpCode) =>
   api.post(`/transactions/${transactionId}/verify-otp`, { otpCode }).then((r) => r.data);
 
 export const getHistory = (userId) =>
-  api.get(`/users/${userId}/transactions`).then((r) => r.data);
+  api.get(`/transactions/user/${userId}`).then((r) => r.data);
 
 export default api;

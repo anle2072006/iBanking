@@ -7,6 +7,7 @@ const userSchema = new mongoose.Schema(
     hoTen: { type: String, required: true },
     soDienThoai: { type: String, required: true },
     email: { type: String, required: true },
+    mssv: { type: String, default: "" },
     balance: { type: Number, required: true, default: 0 },
   },
   { timestamps: true }

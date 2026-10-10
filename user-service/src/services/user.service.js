@@ -22,6 +22,7 @@ exports.login = async (username, password) => {
       email: user.email,
       soDienThoai: user.soDienThoai,
       balance: user.balance,
+      mssv: user.mssv,
     },
   };
 };
@@ -29,7 +30,14 @@ exports.login = async (username, password) => {
 exports.getProfile = async (userId) => {
   const user = await userRepository.findById(userId);
   if (!user) throw new AppError(404, "Không tìm thấy người dùng");
-  return user;
+  return {
+    id: user._id,
+    hoTen: user.hoTen,
+    email: user.email,
+    soDienThoai: user.soDienThoai,
+    balance: user.balance,
+    mssv: user.mssv,
+  };
 };
 
 /**
