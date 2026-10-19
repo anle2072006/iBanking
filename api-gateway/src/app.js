@@ -1,4 +1,4 @@
- require("dotenv").config();
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const authMiddleware = require("./middlewares/auth.middleware");
@@ -6,6 +6,7 @@ const routes = require("./routes");
 
 const app = express();
 app.use(cors());
+app.get("/health", (req, res) => res.status(200).json({ service: "api-gateway", status: "ok" }));
 app.use(authMiddleware);
 app.use("/api", routes);
 
