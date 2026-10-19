@@ -5,6 +5,7 @@ const feeRoutes = require("./routes/fee.routes");
 
 const app = express();
 app.use(express.json());
+app.get("/health", (req, res) => res.status(200).json({ service: "fee-service", status: "ok" }));
 app.use("/api", feeRoutes);
 
 app.use((err, req, res, next) => {
