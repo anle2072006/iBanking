@@ -28,14 +28,14 @@ flowchart TB
     GW -->|"REST"| PS
 
     PS -->|"REST đồng bộ:<br/>kiểm tra & trừ số dư"| US
-    PS -->|"REST đồng bộ:<br/>khóa & cập nhật trạng thái học phí<br/>(SELECT FOR UPDATE)"| FS
+    PS -->|"REST đồng bộ:<br/>giữ chỗ & cập nhật trạng thái học phí<br/>(findOneAndUpdate atomic)"| FS
     PS -->|"REST: yêu cầu tạo OTP"| OS
     OS -->|"publish - bất đồng bộ"| MQ
     MQ -->|"consume - gửi email OTP"| Email
     FE -->|"REST: nhập mã OTP"| GW
-    GW -->|"REST: xác thực OTP"| OS
+    GW -->|"REST: xác thực OTP<br/>(Payment Service gọi OTP Service)"| PS
 
-    PS -->|"publish sự kiện giao dịch<br/>thành công - bất đồng bộ"| MQ
+    PS -->|"REST: yêu cầu gửi email xác nhận<br/>khi giao dịch thành công"| OS
     MQ -->|"consume - gửi email xác nhận"| Email
 
     US --> UDB

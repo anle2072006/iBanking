@@ -6,8 +6,7 @@ erDiagram
         string ho_ten
         string so_dien_thoai
         string email
-        decimal balance
-        int version "dùng cho optimistic locking"
+        decimal balance "trừ/hoàn bằng findOneAndUpdate atomic (balance >= amount)"
     }
 
     TUITION_FEE {
@@ -16,8 +15,7 @@ erDiagram
         string ho_ten_sv
         decimal required_amount "số tiền cần đóng"
         decimal paid_amount "số tiền đã đóng - cho phép đóng một phần"
-        string status "chua_thanh_toan / dang_xu_ly / da_thanh_toan"
-        int version "dùng cho optimistic locking"
+        string status "chua_thanh_toan / dang_xu_ly / da_thanh_toan - đổi bằng findOneAndUpdate atomic"
     }
 
     TRANSACTION {

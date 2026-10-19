@@ -1,0 +1,231 @@
+openapi: 3.0.3
+info:
+  title: TDTU Pay - API Gateway
+  version: 1.0.0
+  description: |
+    API công khai của phân hệ đóng học phí. Frontend chỉ gọi qua API Gateway (cổng 8080).
+
+    **Bảo mật**
+    - Mọi route (trừ `/auth/login`) cần header `Authorization: Bearer <JWT>`.
+    - Danh tính người nộp tiền luôn lấy từ JWT (gateway gắn header `x-user-id`), không nhận `payerId` từ client.
+    - Số tiền thanh toán do server tính (học phí còn thiếu), email lấy từ hồ sơ người dùng.
+    - Các route nội bộ (trừ/hoàn tiền, giữ chỗ/xác nhận/nhả học phí, sinh/xác thực OTP) **không** được công khai
+      qua gateway: gọi vào sẽ nhận 404. Chỉ Payment Service gọi các route này trong mạng nội bộ.
+    - Xem profile và lịch sử giao dịch của người khác trả 403.
+servers:
+  - url: http://localhost:8080/api
+tags:
+  - name: Auth
+  - name: User
+  - name: Fee
+  - name: Payment
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Đăng nhập, nhận JWT (hiệu lực 2 giờ)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: Đăng nhập thành công
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { description: Sai tài khoản hoặc mật khẩu, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /users/{id}:
+    get:
+      tags: [User]
+      summary: Xem hồ sơ và số dư của chính mình
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Phải trùng userId trong JWT, nếu không trả 403
+          schema: { type: string, pattern: "^[0-9a-fA-F]{24}$" }
+      responses:
+        "200":
+          description: Hồ sơ người dùng
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Profile" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /fees/{mssv}:
+    get:
+      tags: [Fee]
+      summary: Tra cứu học phí theo MSSV
+      parameters:
+        - $ref: "#/components/parameters/Mssv"
+      responses:
+        "200":
+          description: Thông tin học phí
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Fee" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: Không tìm thấy MSSV, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /transactions:
+    post:
+      tags: [Payment]
+      summary: Khởi tạo giao dịch đóng học phí và gửi OTP qua email
+      description: |
+        Thứ tự xử lý: giữ chỗ học phí (atomic) -> trừ tiền (atomic) -> ghi giao dịch -> gửi OTP.
+        Bất kỳ bước nào lỗi đều được hoàn tác (hoàn tiền + nhả học phí).
+        Số tiền = học phí còn thiếu của MSSV, do server tính.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InitiateRequest" }
+      responses:
+        "201":
+          description: Đã tạo giao dịch, OTP đã được gửi
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InitiateResponse" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "402": { description: Số dư không đủ, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { description: Không tìm thấy MSSV, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: Học phí đã thanh toán hoặc đang được người khác xử lý (Tình huống B), content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "502": { description: Không gửi được OTP - giao dịch đã được hoàn tác, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /transactions/{id}/verify-otp:
+    post:
+      tags: [Payment]
+      summary: Xác thực OTP để hoàn tất giao dịch
+      description: |
+        OTP có hiệu lực 5 phút, dùng 1 lần, tối đa 5 lần nhập. Hết hạn hoặc hết lượt thử thì
+        giao dịch kết thúc và tiền được hoàn lại tự động. Chỉ chủ giao dịch mới xác thực được.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, pattern: "^[0-9a-fA-F]{24}$" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VerifyOtpRequest" }
+      responses:
+        "200":
+          description: Thanh toán thành công
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transaction" }
+        "400": { description: Sai mã OTP (được nhập lại) hoặc dữ liệu không hợp lệ, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: Không tìm thấy giao dịch (hoặc không thuộc về bạn), content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: Giao dịch không còn ở trạng thái chờ OTP, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "410": { description: OTP hết hạn - giao dịch `expired`, đã hoàn tiền, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "429": { description: Hết lượt nhập OTP - giao dịch `failed`, đã hoàn tiền, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /transactions/user/{userId}:
+    get:
+      tags: [Payment]
+      summary: Lịch sử giao dịch của chính mình (mới nhất trước)
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: Phải trùng userId trong JWT, nếu không trả 403
+          schema: { type: string, pattern: "^[0-9a-fA-F]{24}$" }
+      responses:
+        "200":
+          description: Danh sách giao dịch
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Transaction" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Mssv:
+      name: mssv
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[0-9]{6,12}$", example: "52100013" }
+  responses:
+    ValidationError:
+      description: Dữ liệu đầu vào không hợp lệ
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Unauthorized:
+      description: Thiếu hoặc sai token
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Forbidden:
+      description: Không có quyền truy cập tài nguyên của người khác
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+  schemas:
+    Error:
+      type: object
+      properties:
+        message: { type: string, example: Số dư không đủ }
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string, minLength: 3, maxLength: 50, example: sv001 }
+        password: { type: string, maxLength: 100, example: "123456" }
+    Profile:
+      type: object
+      properties:
+        id: { type: string }
+        hoTen: { type: string }
+        email: { type: string, format: email }
+        soDienThoai: { type: string }
+        balance: { type: integer, description: Số dư (VND) }
+        mssv: { type: string }
+    LoginResponse:
+      type: object
+      properties:
+        token: { type: string }
+        user: { $ref: "#/components/schemas/Profile" }
+    Fee:
+      type: object
+      properties:
+        mssv: { type: string }
+        hoTenSv: { type: string }
+        requiredAmount: { type: integer }
+        paidAmount: { type: integer }
+        status: { type: string, enum: [chua_thanh_toan, dang_xu_ly, da_thanh_toan] }
+    InitiateRequest:
+      type: object
+      required: [mssv]
+      description: Chỉ nhận `mssv`. Mọi trường khác (payerId, amount, email...) bị bỏ qua.
+      properties:
+        mssv: { type: string, pattern: "^[0-9]{6,12}$", example: "52100013" }
+    InitiateResponse:
+      type: object
+      properties:
+        transactionId: { type: string }
+        status: { type: string, enum: [pending, otp_sent, success, failed, expired] }
+    VerifyOtpRequest:
+      type: object
+      required: [otpCode]
+      properties:
+        otpCode: { type: string, pattern: "^[0-9]{6}$", example: "123456" }
+    Transaction:
+      type: object
+      properties:
+        _id: { type: string }
+        payerId: { type: string }
+        mssv: { type: string }
+        amount: { type: integer }
+        payerEmail: { type: string }
+        status: { type: string, enum: [pending, otp_sent, success, failed, expired] }
+        completedAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
