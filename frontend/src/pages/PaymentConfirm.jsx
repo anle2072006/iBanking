@@ -24,12 +24,7 @@ export default function PaymentConfirm() {
     setError("");
     setLoading(true);
     try {
-      const result = await initiateTransaction({
-        payerId: user.id,
-        mssv: fee.mssv,
-        amount,
-        payerEmail: user.email,
-      });
+      const result = await initiateTransaction(fee.mssv);
       navigate("/otp-verify", { state: { transactionId: result.transactionId } });
     } catch (err) {
       setError(err.response?.data?.message || "Không thể khởi tạo giao dịch");

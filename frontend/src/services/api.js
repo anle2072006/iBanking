@@ -19,8 +19,9 @@ export const getProfile = (userId) =>
 export const lookupFee = (mssv) =>
   api.get(`/fees/${mssv}`).then((r) => r.data);
 
-export const initiateTransaction = (payload) =>
-  api.post("/transactions", payload).then((r) => r.data);
+// Chỉ gửi mssv: người nộp lấy từ JWT, số tiền và email do server tự xác định
+export const initiateTransaction = (mssv) =>
+  api.post("/transactions", { mssv }).then((r) => r.data);
 
 export const verifyOtp = (transactionId, otpCode) =>
   api.post(`/transactions/${transactionId}/verify-otp`, { otpCode }).then((r) => r.data);
