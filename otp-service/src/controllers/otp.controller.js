@@ -1,9 +1,11 @@
 const otpService = require("../services/otp.service");
 const publisher = require("../queue/publisher");
+const validate = require("../utils/validate");
 
 exports.generate = async (req, res, next) => {
   try {
-    const { transactionId, email } = req.body;
+    const transactionId = validate.transactionId(req.body.transactionId);
+    const email = validate.email(req.body.email);
     const result = await otpService.generateAndSend({ transactionId, email });
     res.status(201).json(result);
   } catch (err) {
@@ -13,7 +15,8 @@ exports.generate = async (req, res, next) => {
 
 exports.verify = async (req, res, next) => {
   try {
-    const { transactionId, otpCode } = req.body;
+    const transactionId = validate.transactionId(req.body.transactionId);
+    const otpCode = validate.otpCode(req.body.otpCode);
     const result = await otpService.verify(transactionId, otpCode);
     res.status(200).json(result);
   } catch (err) {
@@ -23,10 +26,9 @@ exports.verify = async (req, res, next) => {
 
 exports.confirmation = async (req, res, next) => {
   try {
-    const { transactionId, email, mssv, amount } = req.body;
-    if (!email || !transactionId) {
-      return res.status(400).json({ message: "Thiếu email hoặc mã giao dịch" });
-    }
+    const { mssv, amount } = req.body;
+    const transactionId = validate.transactionId(req.body.transactionId);
+    const email = validate.email(req.body.email);
     await publisher.publishConfirmationEmail({ email, transactionId, mssv, amount });
     res.status(202).json({ queued: true });
   } catch (err) {
