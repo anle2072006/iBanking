@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   mongo-user:
     image: mongo:7
@@ -7,6 +5,11 @@ services:
       - "27018:27017"
     volumes:
       - mongo-user-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   mongo-fee:
     image: mongo:7
@@ -14,6 +17,11 @@ services:
       - "27019:27017"
     volumes:
       - mongo-fee-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   mongo-payment:
     image: mongo:7
@@ -21,6 +29,11 @@ services:
       - "27020:27017"
     volumes:
       - mongo-payment-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   mongo-otp:
     image: mongo:7
@@ -28,12 +41,23 @@ services:
       - "27021:27017"
     volumes:
       - mongo-otp-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   rabbitmq:
     image: rabbitmq:3-management-alpine
     ports:
       - "5672:5672"
       - "15672:15672" # dashboard quản lý queue: http://localhost:15672 (guest/guest)
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 20s
 
   user-service:
     build: ./user-service
@@ -41,7 +65,13 @@ services:
       - "3001:3001"
     env_file: ./user-service/.env
     depends_on:
-      - mongo-user
+      mongo-user:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   fee-service:
     build: ./fee-service
@@ -49,7 +79,13 @@ services:
       - "3002:3002"
     env_file: ./fee-service/.env
     depends_on:
-      - mongo-fee
+      mongo-fee:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3002/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   payment-service:
     build: ./payment-service
@@ -57,10 +93,19 @@ services:
       - "3003:3003"
     env_file: ./payment-service/.env
     depends_on:
-      - mongo-payment
-      - user-service
-      - fee-service
-      - otp-service
+      mongo-payment:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+      fee-service:
+        condition: service_healthy
+      otp-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3003/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   otp-service:
     build: ./otp-service
@@ -68,8 +113,15 @@ services:
       - "3004:3004"
     env_file: ./otp-service/.env
     depends_on:
-      - mongo-otp
-      - rabbitmq
+      mongo-otp:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3004/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   api-gateway:
     build: ./api-gateway
@@ -77,9 +129,17 @@ services:
       - "8080:8080"
     env_file: ./api-gateway/.env
     depends_on:
-      - user-service
-      - fee-service
-      - payment-service
+      user-service:
+        condition: service_healthy
+      fee-service:
+        condition: service_healthy
+      payment-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   frontend:
     build: ./frontend
