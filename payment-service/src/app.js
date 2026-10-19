@@ -6,6 +6,7 @@ const transactionRoutes = require("./routes/transaction.routes");
 
 const app = express();
 app.use(express.json());
+app.get("/health", (req, res) => res.status(200).json({ service: "payment-service", status: "ok" }));
 app.use("/api", transactionRoutes);
 
 app.use((err, req, res, next) => {

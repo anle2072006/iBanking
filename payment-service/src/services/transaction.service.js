@@ -13,14 +13,29 @@ const compensate = async (tx) => {
   await feeClient.release(tx.mssv);
 };
 
-exports.initiate = async ({ payerId, mssv, amount, payerEmail }) => {
-  const fee = await feeClient.lookup(mssv);
+exports.initiate = async ({ payerId, mssv }) => {
+  // Email lấy từ User Service, không tin dữ liệu client gửi lên
+  const profile = await userClient.getProfile(payerId).catch((err) => {
+    throw new AppError(
+      err.response?.status === 404 ? 401 : 502,
+      "Không lấy được thông tin người dùng"
+    );
+  });
+  const payerEmail = profile.email;
+
+  const fee = await feeClient.lookup(mssv).catch((err) => {
+    throw new AppError(
+      err.response?.status === 404 ? 404 : 502,
+      err.response?.data?.message || "Không tra cứu được học phí"
+    );
+  });
   if (fee.status === "da_thanh_toan") {
     throw new AppError(409, "Học phí này đã được thanh toán");
   }
-  const remaining = fee.requiredAmount - fee.paidAmount;
-  if (amount > remaining) {
-    throw new AppError(400, `Số tiền vượt quá số học phí còn thiếu (${remaining})`);
+  // Số tiền do server tự tính (học phí còn thiếu), không nhận từ client
+  const amount = fee.requiredAmount - fee.paidAmount;
+  if (amount <= 0) {
+    throw new AppError(409, "Không còn học phí cần thanh toán");
   }
 
   // 1. Giữ chỗ học phí (atomic) - chặn tình huống B
@@ -66,9 +81,12 @@ exports.initiate = async ({ payerId, mssv, amount, payerEmail }) => {
   return { transactionId: transaction._id, status: "otp_sent" };
 };
 
-exports.verifyOtp = async (transactionId, otpCode) => {
+exports.verifyOtp = async (transactionId, otpCode, userId) => {
   const transaction = await transactionRepository.findById(transactionId);
-  if (!transaction) throw new AppError(404, "Không tìm thấy giao dịch");
+  // Giao dịch của người khác cũng báo 404 để không lộ sự tồn tại của nó
+  if (!transaction || transaction.payerId !== userId) {
+    throw new AppError(404, "Không tìm thấy giao dịch");
+  }
   if (transaction.status !== "otp_sent") {
     throw new AppError(409, "Giao dịch không ở trạng thái chờ xác thực OTP");
   }

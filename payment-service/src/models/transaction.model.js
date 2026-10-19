@@ -8,7 +8,7 @@ const transactionSchema = new mongoose.Schema(
     payerEmail: { type: String, default: "" },
     status: {
       type: String,
-      enum: ["pending", "otp_sent", "success", "failed", "expired", "cancelled"],
+      enum: ["pending", "otp_sent", "success", "failed", "expired"],
       default: "pending",
     },
     completedAt: { type: Date },
