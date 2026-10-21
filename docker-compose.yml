@@ -61,8 +61,6 @@ services:
 
   user-service:
     build: ./user-service
-    ports:
-      - "3001:3001"
     env_file: ./user-service/.env
     depends_on:
       mongo-user:
@@ -75,8 +73,6 @@ services:
 
   fee-service:
     build: ./fee-service
-    ports:
-      - "3002:3002"
     env_file: ./fee-service/.env
     depends_on:
       mongo-fee:
@@ -89,8 +85,6 @@ services:
 
   payment-service:
     build: ./payment-service
-    ports:
-      - "3003:3003"
     env_file: ./payment-service/.env
     depends_on:
       mongo-payment:
@@ -109,8 +103,6 @@ services:
 
   otp-service:
     build: ./otp-service
-    ports:
-      - "3004:3004"
     env_file: ./otp-service/.env
     depends_on:
       mongo-otp:
