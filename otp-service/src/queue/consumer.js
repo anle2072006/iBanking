@@ -1,6 +1,9 @@
 const amqp = require("amqplib");
 const nodemailer = require("nodemailer");
 
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 5000;
+
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: process.env.SMTP_PORT,
@@ -15,11 +18,14 @@ async function startConsumer() {
   await ch.assertQueue("email.send_otp", { durable: true });
   await ch.assertQueue("email.send_confirmation", { durable: true });
 
-  // Hàm dùng chung: gửi mail, thành công thì ack, lỗi thì trả lại queue để thử lại
+  // Hàm dùng chung: gửi mail; lỗi thì thử lại tối đa MAX_RETRIES lần (cách nhau RETRY_DELAY_MS),
+  // bỏ mess để ko trả vô hạn
   const handle = (queue, buildMail) =>
     ch.consume(queue, async (msg) => {
       if (!msg) return;
       const data = JSON.parse(msg.content.toString());
+      const retries = Number(msg.properties.headers?.["x-retries"] || 0);
+
       try {
         await transporter.sendMail({
           from: '"TDTU Pay" <no-reply@tdtupay.local>',
@@ -27,10 +33,25 @@ async function startConsumer() {
           ...buildMail(data),
         });
         console.log(`[Consumer:${queue}] Đã gửi email tới ${data.email} (giao dịch ${data.transactionId})`);
-        ch.ack(msg);
       } catch (err) {
-        console.error(`[Consumer:${queue}] Gửi email thất bại:`, err.message);
-        ch.nack(msg, false, true);
+        if (retries < MAX_RETRIES) {
+          console.error(
+            `[Consumer:${queue}] Gửi email lỗi (${err.message}), thử lại lần ${retries + 1}/${MAX_RETRIES} sau ${RETRY_DELAY_MS / 1000}s`
+          );
+          setTimeout(() => {
+            ch.sendToQueue(queue, msg.content, {
+              persistent: true,
+              headers: { "x-retries": retries + 1 },
+            });
+          }, RETRY_DELAY_MS);
+        } else {
+          console.error(
+            `[Consumer:${queue}] BỎ message của giao dịch ${data.transactionId} sau ${MAX_RETRIES} lần thử: ${err.message}`
+          );
+        }
+      } finally {
+    //luon ack
+        ch.ack(msg);
       }
     });
 
