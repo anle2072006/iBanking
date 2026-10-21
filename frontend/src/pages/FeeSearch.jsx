@@ -27,6 +27,7 @@ export default function FeeSearch() {
         <input
           value={mssv}
           onChange={(e) => setMssv(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleSearch()}
           placeholder="Nhập MSSV"
           className="flex-1 rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-red-800 focus:outline-none"
         />
