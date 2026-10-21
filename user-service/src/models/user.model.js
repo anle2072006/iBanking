@@ -9,6 +9,8 @@ const userSchema = new mongoose.Schema(
     email: { type: String, required: true },
     mssv: { type: String, default: "" },
     balance: { type: Number, required: true, default: 0 },
+    appliedTx: { type: [String], default: [], select: false },
+    refundedTx: { type: [String], default: [], select: false },
   },
   { timestamps: true }
 );

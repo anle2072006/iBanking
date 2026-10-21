@@ -165,3 +165,34 @@ test("lịch sử chỉ gồm giao dịch của người dùng đó", async () =
   assert.equal(history.length, 1);
   assert.equal(history[0].payerId, U1);
 });
+
+test("không đủ số dư: giao dịch được ghi nhận là failed, học phí được nhả, số dư không đổi", async () => {
+  const w = makeWorld({ users: { [U1]: 1_000 }, fees: { 52100013: 5_000_000 } });
+  await assert.rejects(() => w.service.initiate({ payerId: U1, mssv: "52100013" }), (e) => e.statusCode === 402);
+  assert.equal(w.state.users[U1].balance, 1_000);
+  assert.equal(w.state.fees["52100013"].status, "chua_thanh_toan");
+  assert.equal([...w.state.txs.values()][0].status, "failed");
+});
+
+test("service sập TRƯỚC khi trừ tiền (pending chưa bị trừ): dọn dẹp không làm số dư tăng ảo", async () => {
+  const w = makeWorld({ users: { [U1]: 5_000_000 }, fees: { 52100013: 5_000_000 } });
+  w.state.fees["52100013"].status = "dang_xu_ly";
+  const id = "d".repeat(24);
+  const tx = { _id: id, payerId: U1, mssv: "52100013", amount: 5_000_000, status: "pending", createdAt: new Date(Date.now() - 3 * 60 * 1000) };
+  w.state.txs.set(id, tx);
+  await w.service.expireStale();
+  assert.equal(tx.status, "failed");
+  assert.equal(w.state.users[U1].balance, 5_000_000); // không bị cộng thêm
+  assert.equal(w.state.fees["52100013"].status, "chua_thanh_toan");
+});
+
+test("service sập SAU khi trừ tiền (pending đã bị trừ): dọn dẹp hoàn đúng 1 lần", async () => {
+  const w = makeWorld({ users: { [U1]: 5_000_000 }, fees: { 52100013: 5_000_000 } });
+  const id = String((await w.service.initiate({ payerId: U1, mssv: "52100013" })).transactionId);
+  const tx = w.state.txs.get(id);
+  tx.status = "pending";
+  age(tx, 3 * 60 * 1000);
+  await w.service.expireStale();
+  await w.service.expireStale(); // chạy lần 2 cũng không hoàn thêm
+  assert.equal(w.state.users[U1].balance, 5_000_000);
+});

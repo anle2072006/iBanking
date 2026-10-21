@@ -4,18 +4,27 @@ exports.findById = (id) => User.findById(id);
 
 exports.findByUsername = (username) => User.findOne({ username });
 
-exports.atomicDeduct = (userId, amount) =>
+exports.atomicDeduct = (userId, amount, txId) =>
   User.findOneAndUpdate(
-    { _id: userId, balance: { $gte: amount } },
-    { $inc: { balance: -amount } },
+    txId
+      ? { _id: userId, balance: { $gte: amount }, appliedTx: { $ne: txId } }
+      : { _id: userId, balance: { $gte: amount } },
+    txId
+      ? { $inc: { balance: -amount }, $push: { appliedTx: txId } }
+      : { $inc: { balance: -amount } },
     { new: true }
   );
 
-//hoàn tiền
-exports.atomicRefund = (userId, amount) =>
+exports.hasApplied = (userId, txId) => User.exists({ _id: userId, appliedTx: txId });
+
+exports.atomicRefund = (userId, amount, txId) =>
   User.findOneAndUpdate(
-    { _id: userId },
-    { $inc: { balance: amount } },
+    txId
+      ? { _id: userId, appliedTx: txId, refundedTx: { $ne: txId } }
+      : { _id: userId },
+    txId
+      ? { $inc: { balance: amount }, $push: { refundedTx: txId } }
+      : { $inc: { balance: amount } },
     { new: true }
   );
 

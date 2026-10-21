@@ -40,26 +40,27 @@ exports.getProfile = async (userId) => {
   };
 };
 
-/**
- * Được Payment Service gọi (REST đồng bộ) để trừ tiền.
- * Đây là điểm hiện thực trực tiếp Tình huống A trong mục 6 rubric.
- */
-exports.deductBalance = async (userId, amount) => {
+exports.deductBalance = async (userId, amount, txId) => {
   if (amount <= 0) throw new AppError(400, "Số tiền không hợp lệ");
 
-  const updated = await userRepository.atomicDeduct(userId, amount);
-  if (!updated) {
-    // Điều kiện balance >= amount không thỏa -> có thể do số dư gốc
-    // không đủ, HOẶC một giao dịch khác đã trừ trước đó (race condition).
-    throw new AppError(409, "Số dư không đủ để thực hiện giao dịch");
+  const updated = await userRepository.atomicDeduct(userId, amount, txId);
+  if (updated) return updated;
+
+  // Gọi lại cùng 1 mã giao dịch sau khi đã trừ thành công -> idempotent, coi như thành công
+  if (txId && (await userRepository.hasApplied(userId, txId))) {
+    return userRepository.findById(userId);
   }
-  return updated;
+  // Điều kiện balance >= amount không thỏa -> có thể do số dư gốc
+  // không đủ, HOẶC một giao dịch khác đã trừ trước đó (race condition).
+  throw new AppError(409, "Số dư không đủ để thực hiện giao dịch");
 };
 
 /**
- * Compensating transaction: hoàn tiền nếu bước sau (ví dụ cập nhật
- * Fee Service) thất bại sau khi đã trừ tiền thành công.
+ * Compensating transaction: hoàn tiền cho đúng giao dịch đã bị trừ.
  */
-exports.refundBalance = async (userId, amount) => {
-  return userRepository.atomicRefund(userId, amount);
+exports.refundBalance = async (userId, amount, txId) => {
+  const updated = await userRepository.atomicRefund(userId, amount, txId);
+  if (updated) return updated;
+  // Giao dịch này chưa từng bị trừ tiền, hoặc đã được hoàn rồi -> không hoàn thêm (idempotent)
+  return userRepository.findById(userId);
 };

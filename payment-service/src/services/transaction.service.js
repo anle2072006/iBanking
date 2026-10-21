@@ -9,7 +9,7 @@ const PENDING_STUCK_MS = 2 * 60 * 1000;
 
 // Compensating transaction: hoàn tiền + nhả khóa học phí
 const compensate = async (tx) => {
-  await userClient.refundBalance(tx.payerId, tx.amount);
+  await userClient.refundBalance(tx.payerId, tx.amount, String(tx._id));
   await feeClient.release(tx.mssv);
 };
 
@@ -47,17 +47,8 @@ exports.initiate = async ({ payerId, mssv }) => {
     );
   }
 
-  // 2. Trừ tiền (atomic) - chặn tình huống A
-  const deductResult = await userClient.deductBalance(payerId, amount);
-  if (!deductResult.success) {
-    await feeClient.release(mssv);
-    throw new AppError(
-      deductResult.statusCode === 409 ? 402 : 500,
-      deductResult.message || "Số dư không đủ"
-    );
-  }
-
-  // 3. Ghi giao dịch
+    // 2. Ghi giao dịch "pending" TRƯỚC khi trừ tiền: nếu service sập giữa chừng thì vẫn còn
+  //    bản ghi để job dọn dẹp xử lý, tiền không bao giờ "biến mất" mà không có dấu vết.
   const transaction = await transactionRepository.create({
     payerId,
     mssv,
@@ -65,6 +56,18 @@ exports.initiate = async ({ payerId, mssv }) => {
     payerEmail,
     status: "pending",
   });
+
+  // 3. Trừ tiền (atomic + idempotent theo mã giao dịch) - chặn tình huống A
+  const deductResult = await userClient.deductBalance(payerId, amount, transaction._id.toString());
+  if (!deductResult.success) {
+    const claimed = await transactionRepository.transition(transaction._id, "pending", "failed");
+    // Kể cả khi lỗi mạng (không biết tiền đã trừ hay chưa), hoàn tiền idempotent vẫn an toàn
+    if (claimed) await compensate(claimed);
+    throw new AppError(
+      deductResult.statusCode === 409 ? 402 : 500,
+      deductResult.message || "Số dư không đủ"
+    );
+  }
 
   // 4. Gọi OTP Service; lỗi thì hoàn tác toàn bộ
   try {

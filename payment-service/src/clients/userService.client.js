@@ -2,9 +2,9 @@ const axios = require("axios");
 
 const BASE_URL = process.env.USER_SERVICE_URL;
 
-exports.deductBalance = async (userId, amount) => {
+exports.deductBalance = async (userId, amount, transactionId) => {
   try {
-    const { data } = await axios.post(`${BASE_URL}/api/users/${userId}/deduct`, { amount });
+    const { data } = await axios.post(`${BASE_URL}/api/users/${userId}/deduct`, { amount, transactionId});
     return { success: true, ...data };
   } catch (err) {
     return {
@@ -15,8 +15,8 @@ exports.deductBalance = async (userId, amount) => {
   }
 };
 
-exports.refundBalance = async (userId, amount) => {
-  const { data } = await axios.post(`${BASE_URL}/api/users/${userId}/refund`, { amount });
+exports.refundBalance = async (userId, amount, transactionId) => {
+  const { data } = await axios.post(`${BASE_URL}/api/users/${userId}/refund`, { amount, transactionId });
   return data;
 };
 

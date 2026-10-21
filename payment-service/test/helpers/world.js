@@ -15,7 +15,10 @@ const newId = () => (++seq).toString(16).padStart(24, "0");
  */
 exports.makeWorld = ({ users = {}, fees = {} } = {}) => {
   const state = { users: {}, fees: {}, txs: new Map(), sentOtps: [], confirmations: [], faults: {} };
-  for (const [id, balance] of Object.entries(users)) state.users[id] = { balance, email: `${id}@x.com` };
+  for (const [id, balance] of Object.entries(users)) {
+    // applied/refunded: sổ ghi nhận theo mã giao dịch (giống appliedTx/refundedTx ở User Service)
+    state.users[id] = { balance, email: `${id}@x.com`, applied: new Set(), refunded: new Set() };
+  }
   for (const [mssv, required] of Object.entries(fees)) {
     state.fees[mssv] = { required, paid: 0, status: "chua_thanh_toan" };
   }
@@ -62,19 +65,26 @@ exports.makeWorld = ({ users = {}, fees = {} } = {}) => {
       }
       return { id: userId, email: u.email, balance: u.balance };
     },
-    async deductBalance(userId, amount) {
+    async deductBalance(userId, amount, txId) {
       await tick();
       const u = state.users[userId];
+      if (u.applied.has(txId)) return { success: true, balance: u.balance }; // idempotent
       if (u.balance >= amount) {
         u.balance -= amount;
+        u.applied.add(txId);
         return { success: true, balance: u.balance };
       }
       return { success: false, statusCode: 409, message: "Số dư không đủ để thực hiện giao dịch" };
     },
-    async refundBalance(userId, amount) {
+    async refundBalance(userId, amount, txId) {
       await tick();
       fault("refund");
-      state.users[userId].balance += amount;
+      const u = state.users[userId];
+      // Chỉ hoàn khi giao dịch này đã bị trừ tiền và chưa được hoàn
+      if (u.applied.has(txId) && !u.refunded.has(txId)) {
+        u.balance += amount;
+        u.refunded.add(txId);
+      }
       return { success: true };
     },
   };
