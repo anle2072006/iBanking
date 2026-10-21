@@ -44,21 +44,19 @@ for s in api-gateway user-service fee-service payment-service otp-service; do cp
 
 ### Bước 2. Điền các giá trị bắt buộc
 
-Sinh chuỗi bí mật ngẫu nhiên (chạy 2 lần để có 2 chuỗi khác nhau):
+Mở `otp-service/.env` và điền thông tin Gmail dùng để gửi email OTP:
+
+| File | Biến | Giá trị |
+|---|---|---|
+| `otp-service/.env` | `SMTP_USER` | Gmail dùng để gửi thư |
+| `otp-service/.env` | `SMTP_PASS` | App Password 16 ký tự của Gmail đó |
+
+`JWT_SECRET` trong `api-gateway/.env` và `user-service/.env` phải **giống hệt nhau**. Giá trị mẫu có sẵn dùng được khi chạy thử;
+khi triển khai thật nên đổi thành chuỗi ngẫu nhiên:
 
 ```powershell
 [guid]::NewGuid().ToString("N") + [guid]::NewGuid().ToString("N")
 ```
-
-| File | Biến | Giá trị |
-|---|---|---|
-| `api-gateway/.env` | `JWT_SECRET` | chuỗi bí mật thứ nhất |
-| `user-service/.env` | `JWT_SECRET` | **giống hệt** chuỗi ở api-gateway |
-| `otp-service/.env` | `OTP_SECRET` | chuỗi bí mật thứ hai (tối thiểu 16 ký tự) |
-| `otp-service/.env` | `SMTP_USER` | Gmail dùng để gửi thư |
-| `otp-service/.env` | `SMTP_PASS` | App Password 16 ký tự của Gmail đó |
-
-Thiếu `JWT_SECRET`/`OTP_SECRET` hoặc để giá trị mẫu thì service sẽ tự thoát khi khởi động (có in lý do).
 
 > Sau khi sửa `.env`, phải tạo lại container thì giá trị mới mới có hiệu lực (xem mục 5).
 
@@ -251,9 +249,9 @@ Giao dịch được ghi **trước** khi trừ tiền để nếu service sập
 - **Chống tranh chấp:** trừ tiền và giữ chỗ học phí đều là cập nhật nguyên tử (một lệnh `findOneAndUpdate` có điều kiện).
 - **Idempotent:** mỗi tài khoản có sổ `appliedTx`/`refundedTx` theo mã giao dịch, nên gọi lặp không trừ hoặc hoàn hai lần.
 - **Hoàn tác (Saga):** khi giao dịch `failed`/`expired`, tiền được hoàn và học phí được nhả. Một job chạy mỗi 30 giây dọn giao dịch quá hạn.
-- **OTP:** sinh ngẫu nhiên 6 số, chỉ lưu bản băm (HMAC-SHA256), hiệu lực 5 phút, dùng một lần, tối đa 5 lần nhập; bản ghi tự xóa sau khi hết hạn (TTL index).
+- **OTP:** sinh ngẫu nhiên 6 số, hiệu lực 5 phút, dùng một lần, tối đa 5 lần nhập.
 - **Email:** gửi qua RabbitMQ, lỗi thì thử lại tối đa 3 lần.
-- **Bảo mật:** Gateway xác thực JWT, chỉ cho phép danh sách route công khai, giới hạn 10 lần đăng nhập sai/phút/IP.
+- **Bảo mật:** Gateway xác thực JWT và chỉ cho phép danh sách route công khai; mật khẩu được băm bằng bcrypt.
 
 **Hạn chế đã biết:** nếu payment-service sập đúng lúc giữa việc giữ chỗ học phí và ghi giao dịch, học phí có thể
 kẹt ở trạng thái `dang_xu_ly` (không mất tiền). Khi đó cần seed lại học phí để nhả.
@@ -262,12 +260,10 @@ kẹt ở trạng thái `dang_xu_ly` (không mất tiền). Khi đó cần seed 
 
 | Triệu chứng | Cách xử lý |
 |---|---|
-| Container `api-gateway`/`user-service`/`otp-service` thoát ngay | `docker compose logs <service>`: thường do thiếu `JWT_SECRET`/`OTP_SECRET` trong `.env` |
 | Sửa `.env` nhưng không có tác dụng | Chạy `docker compose up -d --force-recreate <service>` (restart không nạp lại `.env`) |
 | Không nhận được email OTP | Kiểm tra `SMTP_USER`/`SMTP_PASS` (App Password) và `SEED_EMAIL`; xem `docker compose logs otp-service`; xem cả thư mục Spam |
 | `port is already allocated` ở cổng 8080 hoặc 80 | Có chương trình khác dùng cổng đó. Tắt nó hoặc đổi cổng trong `docker-compose.yml` |
 | Học phí hiện "đang xử lý" mãi | Seed lại học phí: `docker compose exec fee-service node seed.js` |
-| Đăng nhập báo lỗi 429 | Đăng nhập sai quá 10 lần/phút, đợi 1 phút |
 | Sau `git pull` chạy lỗi lạ | `docker compose up -d --build --remove-orphans` |
 
 ## 11. Cấu trúc thư mục
@@ -275,7 +271,7 @@ kẹt ở trạng thái `dang_xu_ly` (không mất tiền). Khi đó cần seed 
 ```
 iBanking/
 ├── docker-compose.yml
-├── api-gateway/       # điểm vào duy nhất: xác thực JWT, chặn route nội bộ, giới hạn đăng nhập, proxy
+├── api-gateway/       # điểm vào duy nhất: xác thực JWT, chặn route nội bộ, proxy
 ├── user-service/      # tài khoản, số dư (trừ/hoàn tiền nguyên tử, idempotent)
 ├── fee-service/       # học phí (reserve/confirm/release nguyên tử)
 ├── payment-service/   # điều phối giao dịch (Saga), dọn giao dịch quá hạn
