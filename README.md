@@ -6,6 +6,8 @@ Hệ thống xử lý đúng khi nhiều giao dịch xảy ra đồng thời (kh
 
 **Công nghệ:** Node.js/Express, MongoDB (mỗi service một database), RabbitMQ, React + Vite + Tailwind, Docker Compose.
 
+*Video demo: https://youtu.be/l0Tr3JvjNn0*
+
 ## 1. Kiến trúc
 
 ```
